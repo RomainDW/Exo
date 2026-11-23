@@ -16,10 +16,8 @@ pub(super) const HEIGHT: f32 = 76.0;
 const TAB: TextStyle = TextStyle::new(Font::new(Family::Sans, 400), 16.0, 24.0);
 /// A tab's count: 12px/24px.
 const COUNT: TextStyle = TextStyle::new(Font::new(Family::Sans, 400), 12.0, 24.0);
-/// The padding before a tab's bullet: 8px, or 5px after a count.
-const BULLET_PADDING: [f32; 2] = [8.0, 5.0];
-/// The margin after a tab with a bullet.
-const BULLET_MARGIN: f32 = 8.0;
+/// The least gap between two tabs, which keeps their capsules apart.
+const TAB_GAP: f32 = 2.0 * CAPSULE_PADDING.x + 8.0;
 
 /// What the user did in the header.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -507,6 +505,18 @@ pub(super) fn show(
     // Tooltips only with more than one tab to tell apart.
     let several = view.tabs.iter().filter(|tab| !tab.hidden).count() > 1;
     let placed = layout(ui, rect, rem, compact, view);
+    // The selected tab's capsule, under the tabs, sliding to the tab picked.
+    let capsule_target = view
+        .tabs
+        .get(view.selected)
+        .zip(placed.tabs.get(view.selected).copied().flatten())
+        .filter(|(folder, _)| !folder.hidden)
+        .map(|(folder, (at, _))| {
+            let (label, count_width, _) = tab_parts(ui, id.with(("tab", &folder.list)), folder);
+            let width = label + count_width.map_or(0.0, |width| 5.0 + width);
+            Rect::from_min_size(at, vec2(width, 24.0))
+        });
+    capsule(ui, id.with("tab-capsule"), capsule_target, zero);
     for (index, (folder, at)) in view.tabs.iter().zip(&placed.tabs).enumerate() {
         let Some((at, cut)) = *at else { continue };
         let (_, clicked) = tab(
@@ -667,13 +677,10 @@ pub(super) fn layout(ui: &Ui, rect: Rect, rem: f32, compact: bool, view: &super:
             tabs.push(None);
             continue;
         }
-        // `margin-right: 1.5rem` after a tab, or 8px before a bullet's partner. A hidden tab's
-        // `max-width` falls from the whole label's width (`100%`).
-        let margin = if folder.bullet {
-            BULLET_MARGIN
-        } else {
-            1.5 * rem
-        };
+        // `margin-right: 1.5rem` after a tab, at least room for two capsules. Splits that
+        // Superhuman pairs with a bullet are spaced like the rest. A hidden tab's `max-width` falls
+        // from the whole label's width (`100%`).
+        let margin = (1.5 * rem).max(TAB_GAP);
         let cut = folder.hidden.then_some(((right - left) * shown, opacity));
         let width = tab_width(ui, id.with(("tab", &folder.list)), folder);
         tabs.push(Some((
@@ -776,16 +783,10 @@ pub(super) fn height_shown(ui: &Ui, lines: usize) -> f32 {
     shown
 }
 
-/// A tab's width: its name, its count's box and its bullet.
+/// A tab's width: its name and its count's box.
 fn tab_width(ui: &Ui, id: egui::Id, folder: &crate::splits::Tab) -> f32 {
     let (label, count_width, _) = tab_parts(ui, id, folder);
-    let count = count_width.map_or(0.0, |width| 5.0 + width);
-    let bullet = if folder.bullet {
-        BULLET_PADDING[usize::from(count_width.is_some())] + TAB.width(ui.ctx(), "•")
-    } else {
-        0.0
-    };
-    label + count + bullet
+    label + count_width.map_or(0.0, |width| 5.0 + width)
 }
 
 /// The width of a tab's name, the width of its count's box (`width 100ms 250ms ease-in-out` after
@@ -861,13 +862,8 @@ fn tab(
 ) -> (Rect, bool) {
     let palette = exo_ui::palette(ui.ctx());
     let mut painter = ui.painter().clone();
-    let (label, count_width, count) = tab_parts(ui, id, folder);
+    let (label, _, count) = tab_parts(ui, id, folder);
     let width = tab_width(ui, id, folder);
-    let bullet = folder.bullet.then(|| {
-        at.x + label
-            + count_width.map_or(0.0, |width| 5.0 + width)
-            + BULLET_PADDING[usize::from(count.is_some())]
-    });
     let (digits, incomplete) = count.map_or((None, false), |(digits, incomplete)| {
         (Some(digits), incomplete)
     });
@@ -902,16 +898,33 @@ fn tab(
         }
         .show_below(ui, &response, 8.0, focused);
     }
-    // The name's and the count's colors: selected, hovered or neither.
+    // A tab not selected shows a faint capsule while hovered, as the selected one's.
+    let hover = motion::transition(
+        ui.ctx(),
+        id.with("hover-capsule"),
+        hovered && !selected,
+        0.12,
+        CubicBezier::EASE,
+    );
+    if hover > 0.0 {
+        let capsule = rect.expand2(CAPSULE_PADDING);
+        painter.rect_filled(
+            capsule,
+            CornerRadius::from((capsule.height() / 2.0).round() as u8),
+            ink(palette, zero, 0.05, 0.08).gamma_multiply(hover),
+        );
+    }
+    // The name's and the count's colors: selected, hovered or neither. The tabs not selected are
+    // secondary text, a step darker than Superhuman's so they still read.
     let name_color = match (selected, hovered) {
-        (true, _) => ink(palette, zero, 0.8, 0.85),
-        (false, true) => ink(palette, zero, 0.6, 0.6),
-        (false, false) => ink(palette, zero, 0.4, 0.4),
+        (true, _) => ink(palette, zero, 0.85, 0.9),
+        (false, true) => ink(palette, zero, 0.7, 0.75),
+        (false, false) => ink(palette, zero, 0.5, 0.55),
     };
     let count_color = if selected {
-        ink(palette, zero, 0.35, 0.35)
+        ink(palette, zero, 0.45, 0.5)
     } else {
-        ink(palette, zero, 0.25, 0.25)
+        ink(palette, zero, 0.3, 0.35)
     };
     TAB.paint_line(&painter, at, &folder.name, name_color, None);
     if focused {
@@ -932,17 +945,80 @@ fn tab(
             );
         }
     }
-    if let Some(x) = bullet {
-        // The bullet.
-        TAB.paint_line(
-            &painter,
-            pos2(x, at.y),
-            "•",
-            ink(palette, zero, 0.3, 0.3),
-            None,
-        );
-    }
     (rect, response.clicked() && !folder.hidden)
+}
+
+/// The capsule's padding around the selected tab's name and count.
+const CAPSULE_PADDING: Vec2 = vec2(11.0, 3.0);
+/// The capsule's slide: `cubic-bezier(0.2, 0.9, 0.25, 1)` over 300ms, a quick start that settles.
+const CAPSULE_SLIDE: f32 = 0.3;
+const CAPSULE_CURVE: CubicBezier = CubicBezier::new(0.2, 0.9, 0.25, 1.0);
+
+/// Where the capsule slides from and to, and when it set off.
+#[derive(Clone, Copy)]
+struct CapsuleSlide {
+    from: Rect,
+    to: Rect,
+    started: f64,
+}
+
+/// Paints the selected tab's capsule behind `target` (the tab's name and count), sliding there
+/// from where it was. The first time, or once the tabs are gone, it's at once. In the macOS
+/// accent colour, faint, or white over the Inbox Zero photo.
+fn capsule(ui: &Ui, id: egui::Id, target: Option<Rect>, zero: bool) {
+    let ctx = ui.ctx();
+    let Some(target) = target else {
+        ctx.data_mut(|data| data.remove::<CapsuleSlide>(id));
+        return;
+    };
+    let target = target.expand2(CAPSULE_PADDING);
+    let now = ctx.input(|input| input.time);
+    let position = |slide: &CapsuleSlide| {
+        let t = ((now - slide.started) as f32 / CAPSULE_SLIDE).clamp(0.0, 1.0);
+        let eased = CAPSULE_CURVE.at(t);
+        Rect::from_min_max(
+            slide.from.min.lerp(slide.to.min, eased),
+            slide.from.max.lerp(slide.to.max, eased),
+        )
+    };
+    let slide = match ctx.data(|data| data.get_temp::<CapsuleSlide>(id)) {
+        Some(slide) if slide.to == target => slide,
+        // A new tab: off from wherever it is now. A tab that only moved (the window resized, a
+        // count changed) snaps there.
+        Some(slide) if (slide.to.center().x - target.center().x).abs() > 1.0
+            || (slide.to.top() - target.top()).abs() > 1.0 =>
+        {
+            CapsuleSlide {
+                from: position(&slide),
+                to: target,
+                started: now,
+            }
+        }
+        _ => CapsuleSlide {
+            from: target,
+            to: target,
+            started: now,
+        },
+    };
+    ctx.data_mut(|data| data.insert_temp(id, slide));
+    let rect = position(&slide);
+    if now - slide.started < f64::from(CAPSULE_SLIDE) {
+        ctx.request_repaint();
+    }
+    let fill = if zero {
+        white(0.18)
+    } else {
+        let accent = exo_ui::select_fill(ctx);
+        match exo_ui::theme(ctx) {
+            exo_ui::Theme::Snow => accent.gamma_multiply(0.14),
+            exo_ui::Theme::Carbon => accent.gamma_multiply(0.6),
+        }
+    };
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::from((rect.height() / 2.0).round().min(255.0) as u8),
+        fill,
+    );
 }
 
 /// Whether `name` is all pictographs (`⭐`, `🔥🔥`), with nothing else, not even an emoji's
