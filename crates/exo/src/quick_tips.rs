@@ -225,7 +225,7 @@ impl crate::Mail {
                     | Region::ShareAvailabilitySidebarTimezoneInput
             )
         );
-        if !self.account.settings().quick_tips.show || self.inbox.at_inbox_zero() || sharing {
+        if !self.account.settings().quick_tips.show || self.inbox.shows_backdrop() || sharing {
             return None;
         }
         let draft = self.compose.focused();

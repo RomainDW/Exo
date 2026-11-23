@@ -13,7 +13,7 @@ const BAR_FADE: f32 = 0.16;
 /// The focus bar's width.
 const BAR_WIDTH: f32 = 3.0;
 /// The highlight's corners.
-const RADIUS: u8 = 2;
+const RADIUS: u8 = 6;
 
 /// Where the highlight sits, in the list's content coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]

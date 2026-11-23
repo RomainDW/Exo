@@ -1,5 +1,5 @@
-//! The window chrome drawn over the page: a tab strip with its own traffic lights (the native
-//! ones are hidden).
+//! The window chrome drawn over the page: a tab strip, with macOS's own traffic lights centred
+//! at its left end ([`align_traffic_lights`]).
 //!
 //! The strip is the window's, not the page's, so zooming leaves it as it is. It's drawn at the
 //! window's own scale whatever the zoom ([`scale`]), and the page starts under it
@@ -8,8 +8,7 @@
 use std::sync::Arc;
 
 use egui::{
-    Color32, CornerRadius, Galley, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2,
-    ViewportCommand, pos2,
+    Color32, CornerRadius, Galley, Rect, Sense, Stroke, Ui, Vec2, pos2,
     text::{CCursor, LayoutJob},
     vec2,
 };
@@ -143,16 +142,15 @@ pub enum Backdrop {
 struct Colors {
     bar_border: Color32,
     pill_border: Color32,
+    /// The tab on screen's fill, as Safari's, and a hovered tab's.
+    pill_active_fill: Color32,
+    pill_hover_fill: Color32,
     text: Color32,
     text_emphasized: Color32,
     icon: Color32,
     icon_hovered: Color32,
     icon_hover_fill: Color32,
     add: Color32,
-    light_border: Color32,
-    blurred_fill: Color32,
-    /// Whether the strip is Carbon's, which greys the traffic lights for Graphite its own way.
-    carbon: bool,
 }
 
 impl Colors {
@@ -167,45 +165,42 @@ impl Colors {
             (Backdrop::Page, Theme::Snow) => Self {
                 bar_border: Color32::from_black_alpha(26),
                 pill_border: Color32::from_black_alpha(26),
+                pill_active_fill: Color32::from_black_alpha(18),
+                pill_hover_fill: Color32::from_black_alpha(9),
                 text: Color32::from_black_alpha(102),
                 text_emphasized: Color32::from_black_alpha(217),
                 icon: Color32::from_rgb(0x81, 0x86, 0x8d),
                 icon_hovered: Color32::from_rgb(80, 83, 88),
                 icon_hover_fill: Color32::from_rgb(0xe1, 0xe5, 0xea),
                 add: Color32::from_rgb(0x81, 0x86, 0x8d),
-                light_border: Color32::from_black_alpha(38),
-                blurred_fill: Color32::from_black_alpha(15),
-                carbon: false,
             },
             // Carbon: white at 40%/85%, icons `#959ba4`, hovered `hsl(216, 7.6%, 81.4%)` on
             // `#464b53`, blurred traffic lights 6% white.
             (Backdrop::Page, Theme::Carbon) => Self {
                 bar_border: faint,
                 pill_border: faint,
+                pill_active_fill: Color32::from_white_alpha(26),
+                pill_hover_fill: Color32::from_white_alpha(13),
                 text: Color32::from_white_alpha(102),
                 text_emphasized: Color32::from_white_alpha(217),
                 icon: Color32::from_rgb(0x95, 0x9b, 0xa4),
                 icon_hovered: Color32::from_rgb(204, 207, 211),
                 icon_hover_fill: Color32::from_rgb(0x46, 0x4b, 0x53),
                 add: Color32::from_rgb(0x95, 0x9b, 0xa4),
-                light_border: faint,
-                blurred_fill: Color32::from_white_alpha(15),
-                carbon: true,
             },
             // Over a photo: white at .4 (.85 emphasized), icons white at .6 on a white hover fill,
             // the + in `#81868d`.
             (Backdrop::Photo, _) => Self {
                 bar_border: Color32::TRANSPARENT,
                 pill_border: faint,
+                pill_active_fill: Color32::from_white_alpha(38),
+                pill_hover_fill: Color32::from_white_alpha(20),
                 text: Color32::from_white_alpha(102),
                 text_emphasized: Color32::from_white_alpha(217),
                 icon: Color32::from_white_alpha(153),
                 icon_hovered: Color32::from_white_alpha(153),
                 icon_hover_fill: Color32::WHITE,
                 add: Color32::from_rgb(0x81, 0x86, 0x8d),
-                light_border: faint,
-                blurred_fill: Color32::from_white_alpha(20),
-                carbon: false,
             },
         }
     }
@@ -227,25 +222,12 @@ pub enum Action {
 /// The window state the chrome reacts to.
 struct Window {
     focused: bool,
-    fullscreen: bool,
-    maximized: bool,
-    alt: bool,
-    /// Whether macOS's accent colour is Graphite, which greys the traffic lights.
-    graphite: bool,
 }
 
-/// Whether macOS's accent colour is Graphite, as read when the window last came to the front.
-/// `AppleAccentColor` is read again each time the window is focused, and the window starts out
-/// focused.
-fn graphite(ctx: &egui::Context, focused: bool) -> bool {
-    let id = exo_ui::id(ctx, "chrome-graphite");
-    let (was_focused, graphite) = ctx.data(|data| data.get_temp::<(bool, bool)>(id)).unzip();
-    let graphite = match graphite {
-        Some(graphite) if was_focused == Some(true) || !focused => graphite,
-        _ => crate::desktop::graphite_accent(),
-    };
-    ctx.data_mut(|data| data.insert_temp(id, (focused, graphite)));
-    graphite
+/// Centres macOS's own traffic lights in the strip, which keeps its 41px whatever the zoom. Call
+/// it every frame: AppKit puts the buttons back in its own layout passes.
+pub(crate) fn align_traffic_lights(frame: &eframe::Frame, ctx: &egui::Context) {
+    fastframe_titlebar::align_traffic_lights(frame, ctx, TAB_BAR_HEIGHT * scale(ctx));
 }
 
 /// Draws the strip across the top of `ui`, over `backdrop`, with the window's tabs
@@ -281,170 +263,23 @@ fn draw(ui: &mut Ui, tabs: &[Tab<'_>], active: usize, backdrop: Backdrop) -> Opt
         vec2(ui.max_rect().width(), BAR_HEIGHT * s),
     );
     let focused = ui.input(|input| input.viewport().focused.unwrap_or(true));
-    let graphite = graphite(ui.ctx(), focused);
-    let window = ui.input(|input| Window {
-        focused,
-        fullscreen: input.viewport().fullscreen.unwrap_or(false),
-        maximized: input.viewport().maximized.unwrap_or(false),
-        alt: input.modifiers.alt,
-        graphite,
-    });
+    let window = Window { focused };
     let colors = Colors::new(ui, backdrop);
 
-    // The whole bar moves the window, and the controls drawn after it take their own clicks.
-    fastframe_titlebar::drag(ui, bar);
+    // The whole bar moves the window, and a double-click does what System Settings says (Fill
+    // included, with its margins). The controls drawn after it take their own clicks. The
+    // traffic lights are AppKit's own, over the bar's left end.
+    crate::desktop::title_bar(ui, bar);
     ui.painter().hline(
         bar.x_range(),
         bar.bottom() - 0.5 * s,
         Stroke::new(s, colors.bar_border),
     );
-    traffic_lights(ui, bar.min + vec2(12.0, 14.0) * s, &window, &colors, s);
     // The strip is the window's, not the page's, so find doesn't search it.
     let ctx = ui.ctx().clone();
     exo_ui::find::unsearchable(&ctx, || {
         tab_strip(ui, bar, tabs, active, &window, &colors, s)
     })
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Control {
-    Close,
-    Minimize,
-    Fullscreen,
-}
-
-impl Control {
-    /// Fill and border while the group is hovered (macOS's own colors), and its glyph's opacity.
-    /// With the Graphite accent all three go grey: `#8e8e92` on a `#838488` border, glyphs at
-    /// .72; Carbon's `#999`, glyphs at .6.
-    fn lit(self, window: &Window, carbon: bool) -> (Color32, Color32, f32) {
-        match (window.graphite, carbon) {
-            (true, true) => (Color32::from_gray(0x99), Color32::from_gray(0x99), 0.6),
-            (true, false) => (
-                Color32::from_rgb(0x8e, 0x8e, 0x92),
-                Color32::from_rgb(0x83, 0x84, 0x88),
-                0.72,
-            ),
-            (false, _) => {
-                let color = match self {
-                    Self::Close => Color32::from_rgb(0xef, 0x6c, 0x60),
-                    Self::Minimize => Color32::from_rgb(0xf7, 0xbf, 0x50),
-                    Self::Fullscreen => Color32::from_rgb(0x61, 0xc8, 0x57),
-                };
-                (color, color, 0.55)
-            }
-        }
-    }
-
-    /// The glyph's icon, its offset inside the 1px border, and its size.
-    fn glyph(self, window: &Window) -> (&'static str, Vec2, Vec2) {
-        match self {
-            Self::Close => ("shell/window-close", vec2(2.0, 2.0), Vec2::splat(13.0)),
-            Self::Minimize => ("shell/window-minimize", vec2(1.0, 4.0), vec2(8.0, 2.0)),
-            Self::Fullscreen if window.fullscreen => (
-                "shell/window-exit-fullscreen",
-                Vec2::ZERO,
-                Vec2::splat(10.0),
-            ),
-            Self::Fullscreen if window.alt => {
-                ("shell/window-zoom", vec2(1.0, 1.0), Vec2::splat(8.0))
-            }
-            Self::Fullscreen => (
-                "shell/window-fullscreen",
-                vec2(-1.0, 2.0),
-                Vec2::splat(12.0),
-            ),
-        }
-    }
-
-    fn command(self, window: &Window) -> ViewportCommand {
-        match self {
-            Self::Close => ViewportCommand::Close,
-            Self::Minimize => ViewportCommand::Minimized(true),
-            // ⌥ turns the green button into zoom, as in native windows.
-            Self::Fullscreen if window.alt && !window.fullscreen => {
-                ViewportCommand::Maximized(!window.maximized)
-            }
-            Self::Fullscreen => ViewportCommand::Fullscreen(!window.fullscreen),
-        }
-    }
-}
-
-fn traffic_lights(ui: &mut Ui, origin: Pos2, window: &Window, colors: &Colors, s: f32) {
-    let size = 12.0 * s;
-    let pitch = size + 8.0 * s;
-    let carbon = colors.carbon;
-    // The group's hover spans the three circles and their right margins.
-    let group_hovered =
-        ui.rect_contains_pointer(Rect::from_min_size(origin, vec2(3.0 * pitch, size)));
-    let (rest_fill, rest_border) = if window.focused {
-        (Color32::TRANSPARENT, colors.light_border)
-    } else {
-        (colors.blurred_fill, Color32::TRANSPARENT)
-    };
-
-    for (i, control) in [Control::Close, Control::Minimize, Control::Fullscreen]
-        .into_iter()
-        .enumerate()
-    {
-        let rect = Rect::from_min_size(origin + vec2(i as f32 * pitch, 0.0), Vec2::splat(size));
-        let enabled = !(control == Control::Minimize && window.fullscreen);
-        let sense = if enabled {
-            Sense::click()
-        } else {
-            Sense::hover()
-        };
-        let response = ui.interact(rect, ui.id().with(("traffic-light", i)), sense);
-        let hovered = group_hovered && enabled;
-
-        // Fill and border declare their transition under `:hover`, so they animate in and snap
-        // back. The glyph's opacity transition is declared on the base rule and runs both ways.
-        let lit = motion::transition_in(
-            ui.ctx(),
-            response.id.with("lit"),
-            hovered,
-            0.15,
-            CubicBezier::EASE,
-        );
-        let glyph = motion::transition(
-            ui.ctx(),
-            response.id.with("glyph"),
-            hovered,
-            0.15,
-            CubicBezier::EASE,
-        );
-        let (lit_fill, lit_border, glyph_opacity) = control.lit(window, carbon);
-        let mut fill = motion::mix(rest_fill, lit_fill, lit);
-        let mut border = motion::mix(rest_border, lit_border, lit);
-        let mut glyph_color =
-            Color32::from_black_alpha((glyph_opacity * glyph * 255.0).round() as u8);
-        if enabled && response.is_pointer_button_down_on() {
-            // `filter: brightness(75%)` while pressed.
-            [fill, border, glyph_color] =
-                [fill, border, glyph_color].map(|color| darken(color, 0.75));
-        }
-
-        let painter = ui.painter();
-        painter.circle_filled(rect.center(), size / 2.0, fill);
-        // egui strokes a circle outward from its radius. This puts the 1px border at 5–6px.
-        painter.circle_stroke(rect.center(), size / 2.0 - s, Stroke::new(s, border));
-        if glyph_color.a() > 0 {
-            let (icon, offset, glyph) = control.glyph(window);
-            let glyph_rect =
-                Rect::from_min_size(rect.min + (Vec2::splat(1.0) + offset) * s, glyph * s);
-            paint_icon(ui, icon, glyph_rect, glyph_color);
-        }
-        if response.clicked() {
-            ui.ctx().send_viewport_cmd(control.command(window));
-        }
-    }
-}
-
-/// CSS `brightness()`, which scales the color channels and leaves alpha alone.
-fn darken(color: Color32, factor: f32) -> Color32 {
-    let [r, g, b, a] = color.to_array();
-    let scale = |channel: u8| (f32::from(channel) * factor).round() as u8;
-    Color32::from_rgba_premultiplied(scale(r), scale(g), scale(b), a)
 }
 
 const PILL_HEIGHT: f32 = 24.0;
@@ -484,6 +319,7 @@ fn tab_strip(
         let rect = Rect::from_min_size(pos2(x, top), vec2(width, PILL_HEIGHT * s));
         x += width;
         let state = PillState {
+            single: tabs.len() == 1,
             active: shown_active == Some(i),
             closable: tabs.len() > 1,
             window_focused: window.focused,
@@ -526,6 +362,8 @@ fn pill_widths(room: f32, count: usize, active: Option<usize>, min: f32) -> Vec<
 }
 
 struct PillState {
+    /// The window's only tab, which reads as its title, with no box.
+    single: bool,
     active: bool,
     closable: bool,
     window_focused: bool,
@@ -563,14 +401,30 @@ fn pill(
     );
     let text_color = motion::mix(colors.text, colors.text_emphasized, emphasis);
 
-    let painter = ui.painter();
-    painter.rect_stroke(
-        rect,
-        // Whole points, so a zoomed strip's corners are within a third of a point of 4px.
-        CornerRadius::from(4.0 * s),
-        Stroke::new(s, colors.pill_border.gamma_multiply(opacity)),
-        StrokeKind::Inside,
+    // Safari's tabs: no outlines, the tab on screen filled, the others filled while hovered. The
+    // window's only tab is its title, with no box.
+    let hover_fill = motion::transition(
+        &ctx,
+        response.id.with("fill"),
+        hovered,
+        0.12,
+        CubicBezier::EASE,
     );
+    let fill = if state.single {
+        Color32::TRANSPARENT
+    } else if state.active {
+        colors.pill_active_fill
+    } else {
+        motion::mix(Color32::TRANSPARENT, colors.pill_hover_fill, hover_fill)
+    };
+    let painter = ui.painter();
+    if fill.a() > 0 {
+        painter.rect_filled(
+            rect,
+            CornerRadius::from(6.0 * s),
+            fill.gamma_multiply(opacity),
+        );
+    }
     // The title is centered between `padding: 0 1em` (12.8px) inside the 1px border.
     let unzoomed = TextStyle::new(Font::new(Family::System, 400), 12.8, 22.0);
     let style = TextStyle::new(unzoomed.font, 12.8 * s, 22.0 * s);
@@ -910,6 +764,7 @@ fn paint_calendar_day(painter: &egui::Painter, rect: Rect, color: Color32, day: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Pos2;
 
     #[test]
     fn the_active_pill_keeps_125px_and_the_others_share_the_rest() {

@@ -67,6 +67,10 @@ pub enum Face {
     Helvetica,
 }
 
+/// San Francisco, macOS's UI font, upright and italic: variable fonts with `wght` and `opsz`.
+const SF: &str = "/System/Library/Fonts/SFNS.ttf";
+const SF_ITALIC: &str = "/System/Library/Fonts/SFNSItalic.ttf";
+
 /// Where a face's file comes from.
 enum Source {
     /// Compiled in.
@@ -100,13 +104,15 @@ impl Face {
     fn source(self) -> Source {
         use exo_fonts::*;
         match self {
-            Self::SansLight => Source::Exo(&SANS_LIGHT),
-            Self::SansRegular => Source::Exo(&SANS_REGULAR),
-            Self::SansItalic => Source::Exo(&SANS_ITALIC),
-            Self::SansSemibold => Source::Exo(&SANS_SEMIBOLD),
-            Self::SansSemiboldItalic => Source::Exo(&SANS_SEMIBOLD_ITALIC),
-            Self::SansBold => Source::Exo(&SANS_BOLD),
-            Self::SansBoldItalic => Source::Exo(&SANS_BOLD_ITALIC),
+            // The UI and message faces are macOS's own San Francisco, at the weight
+            // `variations` gives each.
+            Self::SansLight => Source::System("SF-UI-Light", SF),
+            Self::SansRegular => Source::System("SF-UI-Regular", SF),
+            Self::SansItalic => Source::System("SF-UI-Italic", SF_ITALIC),
+            Self::SansSemibold => Source::System("SF-UI-Semibold", SF),
+            Self::SansSemiboldItalic => Source::System("SF-UI-SemiboldItalic", SF_ITALIC),
+            Self::SansBold => Source::System("SF-UI-Bold", SF),
+            Self::SansBoldItalic => Source::System("SF-UI-BoldItalic", SF_ITALIC),
             Self::Mono => Source::Exo(&MONO),
             Self::MonoEmail => Source::Exo(&MONO_EMAIL),
             Self::SystemUi => Source::System(".SFNS-Regular", "/System/Library/Fonts/SFNS.ttf"),
@@ -139,6 +145,18 @@ impl Face {
             // The system font only appears in the shell's tab bar, which leaves font smoothing on,
             // so CoreText thickens its stems; drawing at 485 matches that ink at 12.8px.
             Self::SystemUi => VariationCoords::new([(b"wght", 485.0), (b"opsz", size)]),
+            // San Francisco for the UI: a touch over each nominal weight, as egui draws
+            // without CoreText's font smoothing.
+            Self::SansLight => VariationCoords::new([(b"wght", 320.0), (b"opsz", size)]),
+            Self::SansRegular | Self::SansItalic => {
+                VariationCoords::new([(b"wght", 430.0), (b"opsz", size)])
+            }
+            Self::SansSemibold | Self::SansSemiboldItalic => {
+                VariationCoords::new([(b"wght", 600.0), (b"opsz", size)])
+            }
+            Self::SansBold | Self::SansBoldItalic => {
+                VariationCoords::new([(b"wght", 700.0), (b"opsz", size)])
+            }
             _ => VariationCoords::default(),
         }
     }

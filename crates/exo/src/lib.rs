@@ -153,8 +153,10 @@ pub fn native_options() -> eframe::NativeOptions {
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false)
-            // Exo hides the native traffic lights and draws its own.
-            .with_titlebar_buttons_shown(false),
+            // The native traffic lights, centred in the tab strip each frame
+            // (`chrome::align_traffic_lights`): their hover menu, ⌥-click and inactive look are
+            // AppKit's own.
+            .with_titlebar_buttons_shown(true),
         ..Default::default()
     }
 }
@@ -921,6 +923,7 @@ impl Mail {
                 .achievements
                 .hides_chrome(self.ctx.input(|input| input.time)),
             settings_open: self.settings.visible(),
+            photo: self.account.device_settings().inbox_zero_photo,
         });
         self.search_sync();
     }
@@ -2421,7 +2424,10 @@ impl Mail {
         // At Inbox Zero the day's photo is behind everything, the tab strip too, and the right
         // pane is hidden. (The list and the rail don't fade.)
         self.backdrop.refresh(&ctx, &self.now);
-        let zero = self.inbox.at_inbox_zero();
+        // `zero` is the photo's Inbox Zero, which the app is drawn over; `reached` the empty inbox
+        // itself, which counts for the streaks either way.
+        let zero = self.inbox.shows_backdrop();
+        let reached = self.inbox.at_inbox_zero();
         let behind = zero.then(|| {
             let settings_open = self.settings.visible();
             self.backdrop.paint(ui.painter(), window, settings_open);
@@ -2461,8 +2467,8 @@ impl Mail {
             columns.content.max.x = columns.right.max.x;
         }
         // A split just made hidden when empty says so when its list first empties.
-        self.count_inbox_zero(&ctx, zero, !self.was_zero, now);
-        if zero
+        self.count_inbox_zero(&ctx, reached, !self.was_zero, now);
+        if reached
             && !self.was_zero
             && let Some(id) = self
                 .hidden_split
@@ -2475,7 +2481,7 @@ impl Mail {
                     Action::Settings(settings::Action::Split(settings::SplitEvent::Edit(id))),
                 ));
         }
-        self.was_zero = zero;
+        self.was_zero = reached;
 
         // The rail's Calendar opens the week view, its Mail closes it, and the rest of it goes
         // back.
@@ -3087,8 +3093,9 @@ impl Mail {
         achievements::register(&mut self.commands, self.achievements.dialog().is_some());
         backdrop::register(
             &mut self.commands,
-            self.inbox.at_inbox_zero(),
+            self.inbox.shows_backdrop(),
             self.account.settings().reduce_motion,
+            self.account.device_settings().inbox_zero_photo,
         );
         self.register_new_split();
         out_of_office::register(&mut self.commands, &self.out_of_office);

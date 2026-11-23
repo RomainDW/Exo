@@ -394,10 +394,101 @@ impl Drop for FullScreenExits {
     }
 }
 
-/// Whether macOS's accent colour is Graphite, which is when the `AppleAccentColor` default is -1 (0
-/// when unset).
-pub(super) fn graphite_accent() -> bool {
-    NSUserDefaults::standardUserDefaults().integerForKey(ns_string!("AppleAccentColor")) == -1
+/// A press on the tab strip: whether it should move the window. The second press of a
+/// double-click does what System Settings, Desktop & Dock, "Double-click a window's title bar to"
+/// says, as AppKit's own title bar does, and doesn't move it.
+///
+/// Fill goes through the Window menu's own Fill (`_zoomFill:`), which keeps the tiled windows'
+/// margins when "Tiled windows have margins" is on. It's performed once this frame is over, so
+/// egui finishes drawing before AppKit resizes the window.
+pub(super) fn title_bar_press() -> bool {
+    use objc2_app_kit::NSEventType;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return true;
+    };
+    let Some(event) = NSApplication::sharedApplication(mtm).currentEvent() else {
+        return true;
+    };
+    if event.r#type() != NSEventType::LeftMouseDown || event.clickCount() != 2 {
+        return true;
+    }
+    let Some(window) = event.window(mtm) else {
+        return false;
+    };
+    let selector = match double_click_action() {
+        DoubleClick::Fill => sel!(_zoomFill:),
+        DoubleClick::Zoom => sel!(performZoom:),
+        DoubleClick::Minimize => sel!(performMiniaturize:),
+        DoubleClick::Nothing => return false,
+    };
+    // Fill is new in macOS 15. Before it, zoom.
+    let selector = if window.respondsToSelector(selector) {
+        selector
+    } else {
+        sel!(performZoom:)
+    };
+    // SAFETY: all three NSWindow actions take one optional sender, and
+    // `performSelector:withObject:afterDelay:` takes the selector, its argument and a delay.
+    unsafe {
+        let _: () = msg_send![
+            &window,
+            performSelector: selector,
+            withObject: None::<&AnyObject>,
+            afterDelay: 0.0_f64,
+        ];
+    }
+    false
+}
+
+/// macOS's accent colour (`controlAccentColor`) in sRGB, or `None` off the main thread.
+pub(super) fn accent_color() -> Option<egui::Color32> {
+    MainThreadMarker::new()?;
+    // SAFETY: `+[NSColor controlAccentColor]`, `+[NSColorSpace sRGBColorSpace]` and
+    // `-colorUsingColorSpace:` return colors (or nil), and the components are `CGFloat`s.
+    unsafe {
+        let color: Option<Retained<AnyObject>> =
+            msg_send![objc2::class!(NSColor), controlAccentColor];
+        let space: Option<Retained<AnyObject>> =
+            msg_send![objc2::class!(NSColorSpace), sRGBColorSpace];
+        let srgb: Option<Retained<AnyObject>> =
+            msg_send![&*color?, colorUsingColorSpace: &*space?];
+        let srgb = srgb?;
+        let channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let (r, g, b): (f64, f64, f64) = (
+            msg_send![&srgb, redComponent],
+            msg_send![&srgb, greenComponent],
+            msg_send![&srgb, blueComponent],
+        );
+        Some(egui::Color32::from_rgb(channel(r), channel(g), channel(b)))
+    }
+}
+
+/// What a double-click on a title bar does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DoubleClick {
+    Zoom,
+    Fill,
+    Minimize,
+    Nothing,
+}
+
+/// `AppleActionOnDoubleClick` (System Settings stores Zoom as `Maximize`), else the older
+/// `AppleMiniaturizeOnDoubleClick` switch.
+fn double_click_action() -> DoubleClick {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let action = defaults
+        .stringForKey(ns_string!("AppleActionOnDoubleClick"))
+        .map(|action| action.to_string());
+    match action.as_deref() {
+        Some("Maximize") => DoubleClick::Zoom,
+        Some("Fill") => DoubleClick::Fill,
+        Some("Minimize") => DoubleClick::Minimize,
+        Some(_) => DoubleClick::Nothing,
+        None if defaults.boolForKey(ns_string!("AppleMiniaturizeOnDoubleClick")) => {
+            DoubleClick::Minimize
+        }
+        None => DoubleClick::Zoom,
+    }
 }
 
 /// The Mac's model (`hw.model`, `MacBookPro15,2`), if the kernel says.

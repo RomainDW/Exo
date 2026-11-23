@@ -30,8 +30,9 @@ pub use header::{Focus as HeaderFocus, HeaderAction};
 pub use nudge::{HIDE_EMPTY_SPLIT, NudgeAction};
 
 /// A row's height. A search result with files is taller, to show them under its row.
-pub(super) const ROW_HEIGHT: f32 = 36.0;
-const ROW_WITH_FILES: f32 = 68.0;
+/// A row: Superhuman's 36px, with 2px more air above and below ([`row::ROW_AIR`]).
+pub(super) const ROW_HEIGHT: f32 = 36.0 + 2.0 * row::ROW_AIR;
+const ROW_WITH_FILES: f32 = 68.0 + 2.0 * row::ROW_AIR;
 /// A date separator's height.
 const SEPARATOR_HEIGHT: f32 = 48.0;
 /// The list's top padding.
@@ -53,6 +54,8 @@ const STATUS: TextStyle = TextStyle::new(Font::new(Family::Sans, 400), 12.0, 16.
 const STATUS_HEIGHT: f32 = 10.0 + 16.0 + 10.0;
 /// The status lines under the rows.
 const EMPTY: &str = "No conversations found here.";
+/// The status line at Inbox Zero without the photo.
+const INBOX_ZERO: &str = "You've hit Inbox Zero!";
 const EMPTY_OFFLINE: &str = "This folder is not available offline.";
 const EARLIER_OFFLINE: &str = "Earlier conversations are not available offline.";
 /// The status line over the rows.
@@ -180,6 +183,8 @@ pub struct View {
     /// Whether the settings menu is open. At Inbox Zero, the header's search and compose are hidden
     /// to give the menu room.
     pub settings_open: bool,
+    /// Whether Inbox Zero shows the day's photo, else it's an empty list like any other.
+    pub photo: bool,
 }
 
 /// How the list looks as search results.
@@ -1300,6 +1305,12 @@ impl Inbox {
         self.view.inbox && self.view.filter.is_none() && self.is_empty()
     }
 
+    /// Whether the list is at Inbox Zero with the day's photo behind it, which the header, the
+    /// rail and the strip are drawn over and which hides the right pane.
+    pub fn shows_backdrop(&self) -> bool {
+        self.view.photo && self.at_inbox_zero()
+    }
+
     /// What goes under the rows: the spinner until the list has loaded all it can (offline, that's
     /// what's stored), then the status line (search results have theirs at the top).
     fn bottom(&self) -> Bottom {
@@ -1313,7 +1324,8 @@ impl Inbox {
         }
         match (self.threads.is_empty(), offline_end) {
             (true, true) => Bottom::Status(EMPTY_OFFLINE),
-            (true, false) if self.at_inbox_zero() => Bottom::None,
+            (true, false) if self.shows_backdrop() => Bottom::None,
+            (true, false) if self.at_inbox_zero() => Bottom::Status(INBOX_ZERO),
             (true, false) => Bottom::Status(EMPTY),
             (false, true) => Bottom::Status(EARLIER_OFFLINE),
             (false, false) => Bottom::None,
@@ -1324,7 +1336,7 @@ impl Inbox {
     pub fn show(&mut self, ui: &mut Ui, rect: Rect, rem: f32, window_width: f32) -> Vec<Action> {
         let now = ui.input(|input| input.time);
         let palette = exo_ui::palette(ui.ctx());
-        let zero = self.at_inbox_zero();
+        let zero = self.shows_backdrop();
         if !zero {
             ui.painter()
                 .rect_filled(rect, 0.0, palette.background_base_default);

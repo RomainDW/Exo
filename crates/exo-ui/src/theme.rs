@@ -55,6 +55,31 @@ pub fn palette(ctx: &Context) -> &'static Palette {
     theme(ctx).palette()
 }
 
+/// The system's accent colour as `0xRRGGBBAA`, or 0 for none ([`set_accent`]).
+static ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Sets the system's accent colour, which selected rows take instead of Classic's blue. `None`
+/// goes back to Classic's.
+pub fn set_accent(color: Option<Color32>) {
+    let packed = color.map_or(0, |color| u32::from_be_bytes(color.to_array()) | 0xff);
+    ACCENT.store(packed, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A selected row's fill: the system's accent colour (at 55% in Carbon, as macOS dims its
+/// selections in Dark Mode), else the palette's `select_fill_default`.
+pub fn select_fill(ctx: &Context) -> Color32 {
+    let packed = ACCENT.load(std::sync::atomic::Ordering::Relaxed);
+    if packed == 0 {
+        return palette(ctx).select_fill_default;
+    }
+    let [r, g, b, _] = packed.to_be_bytes();
+    let accent = Color32::from_rgb(r, g, b);
+    match theme(ctx) {
+        Theme::Snow => accent,
+        Theme::Carbon => accent.gamma_multiply(0.55),
+    }
+}
+
 fn app_theme_id() -> Id {
     Id::new("exo_ui::app_theme")
 }

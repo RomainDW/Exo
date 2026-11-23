@@ -14,6 +14,9 @@ use egui::{Event, Key};
 const MAX_LEVEL: i32 = 3;
 /// Each level's factor over the one below (Chromium's `kTextSizeMultiplierRatio`).
 const RATIO: f32 = 1.2;
+/// Actual size's factor in the app: everything a tenth larger than Superhuman's sizes, like
+/// Chromium at 110%, so text reads at a Mac app's size. Screenshots and tests keep 1.
+const BASE: f32 = 1.1;
 /// The file in the state folder.
 const FILE_NAME: &str = "zoom.json";
 
@@ -84,7 +87,8 @@ impl Zoom {
             self.level = level;
             self.save();
         }
-        let factor = factor(self.level);
+        let base = if self.path.is_some() { BASE } else { 1.0 };
+        let factor = base * factor(self.level);
         if ctx.zoom_factor() != factor {
             ctx.set_zoom_factor(factor);
         }

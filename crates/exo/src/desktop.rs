@@ -84,13 +84,44 @@ pub fn without_activating(builder: &mut eframe::EventLoopBuilder<eframe::UserEve
     let _ = builder;
 }
 
-/// Whether macOS's accent colour is Graphite (`AppleAccentColor` is -1), which greys the
-/// strip's traffic lights.
-pub(crate) fn graphite_accent() -> bool {
+/// Makes `bar`, the tab strip, the window's title bar: a press moves the window, and a
+/// double-click does what System Settings says (Zoom, Fill, Minimize or nothing). Draw the strip's
+/// own controls after it, so they take their clicks. Nothing in full screen.
+pub(crate) fn title_bar(ui: &mut egui::Ui, bar: egui::Rect) {
+    if ui.input(|input| input.viewport().fullscreen.unwrap_or(false)) {
+        return;
+    }
+    let response = ui.interact(
+        bar,
+        ui.id().with("title-bar"),
+        egui::Sense::click_and_drag(),
+    );
+    if !(response.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_pressed()))
+    {
+        return;
+    }
     #[cfg(target_os = "macos")]
-    return macos::graphite_accent();
+    let drag = macos::title_bar_press();
     #[cfg(not(target_os = "macos"))]
-    false
+    let drag = true;
+    // AppKit starts a window drag only during the mouse-down that began it.
+    if drag {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+}
+
+/// Hands the list macOS's accent colour for its selection, read again each second, so a change
+/// in System Settings shows at once.
+pub(crate) fn follow_accent(ctx: &egui::Context) {
+    let id = egui::Id::new("exo::accent-read");
+    let now = ctx.input(|input| input.time);
+    let last = ctx.data(|data| data.get_temp::<f64>(id));
+    if last.is_some_and(|last| now - last < 1.0) {
+        return;
+    }
+    ctx.data_mut(|data| data.insert_temp(id, now));
+    #[cfg(target_os = "macos")]
+    exo_ui::set_accent(macos::accent_color());
 }
 
 /// Whether this Mac's Escape key is on its Touch Bar (the 2016–2019 MacBook Pros), the Macs that

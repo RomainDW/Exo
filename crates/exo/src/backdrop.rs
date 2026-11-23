@@ -23,6 +23,8 @@ pub enum Action {
     Download,
     /// `Inbox Zero: Disable/Enable Animated Images`, which toggles the Reduce Motion setting.
     ToggleAnimatedImages,
+    /// `Inbox Zero: Show/Hide Background Image`, which shows the photo at Inbox Zero or not.
+    TogglePhoto,
 }
 
 /// Registers `Download Inbox Zero Image` at Inbox Zero (`zero`), in the list and its header,
@@ -31,6 +33,7 @@ pub(crate) fn register(
     commands: &mut Commands<crate::commands::Action>,
     zero: bool,
     reduced: bool,
+    photo: bool,
 ) {
     let act = crate::commands::Action::Backdrop;
     if zero {
@@ -45,6 +48,19 @@ pub(crate) fn register(
             .icon("data/download"),
         );
     }
+    commands.add(
+        Command::new(
+            "TOGGLE_INBOX_ZERO_PHOTO",
+            if photo {
+                "Inbox Zero: Hide Background Image"
+            } else {
+                "Inbox Zero: Show Background Image"
+            },
+            act(Action::TogglePhoto),
+        )
+        .aliases(["Wallpaper", "Background Photo", "Fond d'écran"])
+        .icon("data/settings"),
+    );
     let title = if reduced {
         "Inbox Zero: Enable Animated Images"
     } else {
@@ -285,6 +301,17 @@ impl crate::Mail {
             },
             // Exo's photos are all stills, so the setting has nothing to stop yet. Its hint says
             // what it did.
+            Action::TogglePhoto => {
+                let photo = !self.account.device_settings().inbox_zero_photo;
+                self.account
+                    .update_device_settings(|settings| settings.inbox_zero_photo = photo);
+                self.commands
+                    .hint(exo_commands::Hint::new().text(if photo {
+                        "Inbox Zero Background Shown"
+                    } else {
+                        "Inbox Zero Background Hidden"
+                    }));
+            }
             Action::ToggleAnimatedImages => {
                 let reduce = !self.account.settings().reduce_motion;
                 self.account

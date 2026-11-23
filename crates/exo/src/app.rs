@@ -1384,8 +1384,10 @@ impl eframe::App for App {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        crate::chrome::align_traffic_lights(frame, &ctx);
+        crate::desktop::follow_accent(&ctx);
         let mut frames = std::mem::take(&mut self.frames);
         frames.draw(&ctx, || self.frame(ui));
         self.frames = frames;

@@ -986,6 +986,9 @@ pub struct DeviceSettings {
     /// Get Me To Zero has been run.
     #[serde(skip_serializing_if = "is_false")]
     pub gmtz_started: bool,
+    /// The day's photo shows behind Inbox Zero. Off, an empty inbox looks like any other list.
+    #[serde(skip_serializing_if = "is_false")]
+    pub inbox_zero_photo: bool,
     /// The calendar accounts whose calendars the week's list folds away.
     #[serde(skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub folded_calendar_accounts: std::collections::BTreeSet<String>,

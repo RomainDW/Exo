@@ -23,6 +23,11 @@ use crate::{
 };
 use exo_store::ReminderStatus;
 
+/// The air a row has above and below its 36px of content.
+pub(super) const ROW_AIR: f32 = 2.0;
+/// A selected row's corners.
+const SELECTED_RADIUS: u8 = 6;
+
 /// Every text in a row: 12px/16px.
 const REGULAR: TextStyle = TextStyle::new(Font::new(Family::Sans, 400), 12.0, 16.0);
 const BOLD: TextStyle = TextStyle::new(Font::new(Family::Sans, 700), 12.0, 16.0);
@@ -166,6 +171,9 @@ pub(super) fn paint(
     state: &State<'_>,
     now: &Zoned,
 ) -> Option<Hit> {
+    // The background spans the whole row, and the content sits in its middle.
+    let outer = rect;
+    let rect = rect.shrink2(vec2(0.0, ROW_AIR));
     let palette = exo_ui::palette(ui.ctx());
     let (left, right) = geometry.content(rect);
     let first_row = rect.top() + FIRST_ROW;
@@ -179,18 +187,18 @@ pub(super) fn paint(
     if state.selected {
         // A selected row, whose 2px corners square where selected rows meet.
         let (top, bottom) = (
-            if state.joined_above { 0 } else { 2 },
-            if state.joined_below { 0 } else { 2 },
+            if state.joined_above { 0 } else { SELECTED_RADIUS },
+            if state.joined_below { 0 } else { SELECTED_RADIUS },
         );
         painter.rect_filled(
-            exo_ui::pixel_snap(rect),
+            exo_ui::pixel_snap(outer),
             CornerRadius {
                 nw: top,
                 ne: top,
                 sw: bottom,
                 se: bottom,
             },
-            palette.select_fill_default,
+            exo_ui::select_fill(ui.ctx()),
         );
     }
     let (strong, subdued) = if state.selected {
@@ -200,7 +208,7 @@ pub(super) fn paint(
     };
 
     let background = if state.selected {
-        palette.select_fill_default
+        exo_ui::select_fill(ui.ctx())
     } else if state.cursor {
         palette.background_brand_subdued
     } else {

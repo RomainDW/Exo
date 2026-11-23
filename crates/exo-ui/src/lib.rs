@@ -108,7 +108,9 @@ pub use shadow::{BoxShadow, paint_carbon_highlight, paint_fade_in, scroll_shadow
 pub use slider::{SLIDER_SIZE, SliderColors, paint_slider};
 pub use text::{Text, TextStyle, WBR, align_baselines, layout, paint_job, paint_text};
 pub use text_selection::{Released, TextSelection};
-pub use theme::{Palette, Theme, app_theme, palette, set_theme, theme, with_theme};
+pub use theme::{
+    Palette, Theme, app_theme, palette, select_fill, set_accent, set_theme, theme, with_theme,
+};
 pub use thread_status::{
     Star, Status, Unread, animated_star, animated_status, paint_failed_status, paint_status,
     paint_thread_status,
