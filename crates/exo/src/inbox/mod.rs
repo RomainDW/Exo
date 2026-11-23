@@ -2035,7 +2035,11 @@ mod tests {
             inbox: true,
             ..view(false, true)
         });
-        assert_eq!(empty.bottom(), Bottom::None, "Inbox Zero says nothing");
+        assert_eq!(
+            empty.bottom(),
+            Bottom::Status(INBOX_ZERO),
+            "Inbox Zero without its photo says so"
+        );
         empty.set_view(View {
             loading: true,
             ..view(false, false)

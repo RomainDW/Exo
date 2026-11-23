@@ -582,20 +582,6 @@ pub(super) fn height(ui: &Ui, open: &mut Open, width: f32, cx: &Context<'_>) -> 
     layout(ui, open, width, 0.0, cx).height
 }
 
-/// The inline form's separator: `border-top: 1px solid #ededed` (dark `#5f6165`), literals.
-pub(super) fn separator(ui: &Ui, left: f32, top: f32, width: f32) {
-    let color = if exo_ui::theme(ui.ctx()) == Theme::Carbon {
-        Color32::from_rgb(0x5f, 0x61, 0x65)
-    } else {
-        Color32::from_rgb(0xed, 0xed, 0xed)
-    };
-    ui.painter().rect_filled(
-        exo_ui::pixel_snap(Rect::from_min_size(pos2(left, top), vec2(width, 1.0))),
-        0.0,
-        color,
-    );
-}
-
 /// Colours the form takes as Classic literals rather than from the palette.
 struct Ink {
     dark: bool,

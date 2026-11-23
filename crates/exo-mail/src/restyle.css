@@ -35,6 +35,17 @@ div.ShadowHTML, div.ShadowBody, div.ShadowWrapper { --exo-original-color: #000; 
 .Theme-dark .styleQuotedContent.styleUnquotedContent .exo-color-pink { color: rgb(201, 118, 209) !important; }
 .Theme-dark .styleQuotedContent.styleUnquotedContent .exo-color-grey { color: rgb(176, 176, 176) !important; }
 .Theme-dark .styleQuotedContent.styleUnquotedContent .exo-color-transparent-bg { background-color: transparent !important; }
+/* The new part is restyled whatever the quote is: a quote classed as marketing (a newsletter
+ * replied to) used to leave the reply above it in its light colours. */
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-black { color: hsla(0, 0%, 100%, .9) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-red { color: rgb(255, 122, 122) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-green { color: rgb(92, 186, 135) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-blue { color: rgb(74, 143, 225) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-purple { color: rgb(213, 174, 239) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-yellow { color: rgb(230, 230, 0) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-orange { color: rgb(233, 150, 56) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-pink { color: rgb(201, 118, 209) !important; }
+.Theme-dark:not(.isMarketing) .styleUnquotedContent .unquoted-content .exo-color-grey { color: rgb(176, 176, 176) !important; }
 .Theme-dark.isMarketing .exo-color-black { color: rgba(0, 0, 0, .9) !important; }
 .Theme-dark.isMarketing blockquote:not([style*="border:none"]),
 .Theme-dark.isMarketing blockquote:not([style*="border:none"]) .exo-color-black { color: rgba(0, 0, 0, .6) !important; }

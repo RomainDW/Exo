@@ -32,8 +32,13 @@ pub(crate) fn is_marketing(root: &NodeRef, sender: &str) -> bool {
         return false;
     }
     let any = |matches: fn(&NodeRef) -> bool| dom::select_first(root, matches).is_some();
+    // A centered element counts when it holds a layout's worth: a block of text or a wide image.
+    // A signature's centered logo or name cell doesn't, which kept personal mail with a table
+    // signature in light colours in Carbon.
     let centered = any(|n| {
-        dom::attr(n, "align").is_some_and(|a| a.eq_ignore_ascii_case("center")) && counts(n)
+        dom::attr(n, "align").is_some_and(|a| a.eq_ignore_ascii_case("center"))
+            && counts(n)
+            && is_substantial(n)
     });
     let bordered = any(|n| {
         if !dom::attr(n, "style").is_some_and(|s| s.contains("border:")) {
@@ -55,24 +60,42 @@ pub(crate) fn is_marketing(root: &NodeRef, sender: &str) -> bool {
             && Style::of(n).get("text-align") == "center"
             && counts(n)
     });
-    let button = any(|n| {
-        if !dom::is(n, "a")
-            || !dom::attr(n, "style").is_some_and(|s| s.contains("display"))
-            || is_excluded(n)
-        {
-            return false;
-        }
-        let style = Style::of(n);
-        matches!(style.get("display"), "block" | "inline-block")
-            && [
-                style.get("padding"),
-                style.get("height"),
-                style.get("line-height"),
-            ]
-            .iter()
-            .any(|v| has_positive_length(v))
-    });
+    let button = any(is_button);
     centered || bordered || marked || (centered_text && button)
+}
+
+/// Whether `node` holds more than a signature's cell: at least 200 characters of text, a heading,
+/// a button-like link, or an image at least 300px wide.
+fn is_substantial(node: &NodeRef) -> bool {
+    dom::text_content(node).trim().chars().count() >= 200
+        || dom::select_first(node, |n| {
+            matches!(dom::tag(n), Some("h1" | "h2" | "h3"))
+                || is_button(n)
+                || dom::is(n, "img")
+                    && dom::attr(n, "width")
+                        .and_then(|w| w.trim().trim_end_matches("px").parse::<f32>().ok())
+                        .is_some_and(|w| w >= 300.0)
+        })
+        .is_some()
+}
+
+/// A link styled as a button: a block or inline-block with a padding, height or line-height.
+fn is_button(n: &NodeRef) -> bool {
+    if !dom::is(n, "a")
+        || !dom::attr(n, "style").is_some_and(|s| s.contains("display"))
+        || is_excluded(n)
+    {
+        return false;
+    }
+    let style = Style::of(n);
+    matches!(style.get("display"), "block" | "inline-block")
+        && [
+            style.get("padding"),
+            style.get("height"),
+            style.get("line-height"),
+        ]
+        .iter()
+        .any(|v| has_positive_length(v))
 }
 
 /// Whether a `border` shorthand's width is zero.
@@ -274,8 +297,17 @@ mod tests {
 
     #[test]
     fn classifies_marketing_mail() {
+        assert!(marketing(&format!(
+            "<table><tr><td align=\"center\">{}</td></tr></table>",
+            "Sale on everything this week. ".repeat(8)
+        )));
         assert!(marketing(
-            "<table><tr><td align=\"center\">Sale</td></tr></table>"
+            "<table align=\"center\"><tr><td><img width=\"600\" src=\"x\"></td></tr></table>"
+        ));
+        // A table signature's centered logo and name cells.
+        assert!(!marketing(
+            "<div>Hi Ann,</div><table><tr><td align=\"center\"><img width=\"50\" src=\"logo\"></td>\
+             <td align=\"center\">Romain Ollier<br>Symediane</td></tr></table>"
         ));
         assert!(marketing("<div style=\"border: 1px solid #ddd\">Hi</div>"));
         assert!(!marketing(

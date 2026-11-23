@@ -153,8 +153,11 @@ fn blocked_images_are_empty_boxes_sized_like_broken_ones() {
 fn carbon_marketing_mail_keeps_a_white_box_with_a_white_border() {
     // Classic Carbon's marketing mail (`.Theme-carbon:not(.Theme-dark).isMarketing`) whitens the
     // base rule's border, but its personal mail keeps it.
-    let marketing = "<table width=\"100%\"><tr><td><img src=\"https://x.example/a.png\" width=\"120\" height=\"60\"></td></tr></table>\
-                     <p align=\"center\">Our winter sale ends on Sunday.</p>";
+    let marketing = &format!(
+        "<table width=\"100%\"><tr><td><img src=\"https://x.example/a.png\" width=\"120\" height=\"60\"></td></tr></table>\
+         <p align=\"center\">{}</p>",
+        "Our winter sale ends on Sunday. ".repeat(8)
+    );
     assert!(rendered(marketing).unquoted_is_marketing);
     let border = |theme| {
         let (_, image) = show(marketing, theme, true);

@@ -1290,8 +1290,9 @@ impl<'a> Inline<'a> {
         let Some(at) = self.draft_under(message) else {
             return Vec::new();
         };
+        // The draft has its own card ([`crate::thread`]), whose top padding the separator's
+        // space becomes.
         let (left, top, width) = (form.left(), form.top(), form.width());
-        form::separator(ui, left, top, width);
         let cx = self.context(at, column, Some(card));
         if self.popped == Some(self.drafts[at].id.as_str()) {
             return form::placeholder_header(

@@ -152,7 +152,7 @@ fn double_and_triple_clicks_select_words_and_paragraphs() {
 #[test]
 fn paints_tall_bodies_in_bands() {
     // Marketing mail keeps its colors. 6000 CSS px is three bands at 2×.
-    let body = rendered("<div align=\"center\" style=\"height:6000px;background:#00ff00\">x</div>");
+    let body = rendered("<div class=\"Superhuman-marketing\" style=\"height:6000px;background:#00ff00\">x</div>");
     assert!(body.unquoted_is_marketing);
     let mut view = BodyView::new(&body, ViewOptions::default(), &fonts(), None);
     assert_eq!(view.layout(100.0, 2.0), 6000.0);

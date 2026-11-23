@@ -415,6 +415,52 @@ pub(super) fn card(ui: &Ui, rect: Rect, layout: &Layout, kind: CardKind, marketi
     }
 }
 
+/// The space between a message's card and its draft's.
+pub(super) const DRAFT_GAP: f32 = 12.0;
+
+/// What a draft of `draft` px (its form, from [`crate::compose::Inline::height`]) adds to its
+/// message's card: the gap, the draft's own card, and that card's bottom padding.
+pub(super) fn draft_card_height(draft: f32) -> f32 {
+    if draft > 0.0 {
+        DRAFT_GAP + draft + PADDING_BOTTOM
+    } else {
+        0.0
+    }
+}
+
+/// A draft's own card under its message's `message` card: the composing card's shadow, tinted
+/// with the accent and outlined in it, and a short accent line across the gap tying it to the
+/// message it answers.
+pub(super) fn draft_card(ui: &Ui, message: Rect, rect: Rect, layout: &Layout) {
+    card(ui, rect, layout, CardKind::Composing, false);
+    let accent = exo_ui::select_fill(ui.ctx());
+    let dark = exo_ui::theme(ui.ctx()) == Theme::Carbon;
+    let (tint, outline, link) = if dark {
+        (0.16, 0.7, 0.8)
+    } else {
+        (0.06, 0.35, 0.45)
+    };
+    let painter = ui.painter();
+    let snapped = exo_ui::pixel_snap(rect);
+    let radius = CornerRadius::same(RADIUS);
+    painter.rect_filled(snapped, radius, accent.gamma_multiply(tint));
+    painter.rect_stroke(
+        snapped,
+        radius,
+        egui::Stroke::new(1.0, accent.gamma_multiply(outline)),
+        egui::StrokeKind::Inside,
+    );
+    let x = layout.inner.left() + 10.0;
+    painter.rect_filled(
+        exo_ui::pixel_snap(Rect::from_min_max(
+            pos2(x, message.bottom()),
+            pos2(x + 2.0, rect.top()),
+        )),
+        1.0,
+        accent.gamma_multiply(link),
+    );
+}
+
 /// The focused card's bar: 3px of `rgb(190.2, 192.6, 227.8)`, fading in over 66ms.
 pub(super) const FOCUS: Color32 = Color32::from_rgb(190, 193, 228);
 const FOCUS_FADE: f32 = 0.066;

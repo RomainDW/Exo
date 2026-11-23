@@ -1385,7 +1385,7 @@ impl ThreadView {
                             invite,
                             body,
                             layout.inner.width(),
-                        ) + draft
+                        ) + message::draft_card_height(draft)
                     } else {
                         message::COLLAPSED_HEIGHT
                     };
@@ -1856,6 +1856,24 @@ impl ThreadView {
                 ui.id().with(("message", &item.id)),
                 Sense::click_and_drag(),
             );
+            // A draft gets its own card under its message's, `DRAFT_GAP` below it.
+            let draft = draft_heights.get(&item.id).copied().unwrap_or(0.0);
+            let draft_card = (item.expanded && draft > 0.0).then(|| {
+                Rect::from_min_max(
+                    pos2(card.left(), card.bottom() - message::PADDING_BOTTOM - draft),
+                    card.max,
+                )
+            });
+            let (card, whole) = match draft_card {
+                Some(draft_card) => (
+                    Rect::from_min_max(
+                        card.min,
+                        pos2(card.right(), draft_card.top() - message::DRAFT_GAP),
+                    ),
+                    card,
+                ),
+                None => (card, card),
+            };
             if item.expanded {
                 let marketing = bodies
                     .facts(&item.id)
@@ -1981,18 +1999,17 @@ impl ThreadView {
                         selected = Some((item.id.clone(), body.min));
                     }
                 }
-                let draft = draft_heights.get(&item.id).copied().unwrap_or(0.0);
-                if draft > 0.0
+                if let Some(draft_card) = draft_card
                     && let Some(drafts) = drafts.as_mut()
                 {
-                    let top = card.bottom() - message::PADDING_BOTTOM - draft;
+                    message::draft_card(ui, card, draft_card, layout);
                     let form = Rect::from_min_size(
-                        pos2(layout.inner.left(), top),
+                        pos2(layout.inner.left(), draft_card.top()),
                         vec2(layout.inner.width(), draft),
                     );
                     actions.extend(
                         drafts
-                            .show(ui, &item.id, form, card, layout.column.x_range())
+                            .show(ui, &item.id, form, draft_card, layout.column.x_range())
                             .into_iter()
                             .map(Action::Compose),
                     );
@@ -2001,7 +2018,7 @@ impl ThreadView {
                     footer::paint_hint(
                         ui,
                         layout,
-                        card.bottom()
+                        whole.bottom()
                             + collapse(message::EXPANDED_MARGIN_BOTTOM, footer::MARGIN_TOP),
                         hint,
                     );
