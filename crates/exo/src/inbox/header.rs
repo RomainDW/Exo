@@ -503,14 +503,19 @@ pub(super) fn show(
         return action.or_else(|| background.clicked().then_some(HeaderAction::Background));
     }
     // Tooltips only with more than one tab to tell apart.
-    let several = view.tabs.iter().filter(|tab| !tab.hidden).count() > 1;
+    let several = view
+        .tabs
+        .iter()
+        .filter(|tab| !tab_hidden(ui.ctx(), tab).0)
+        .count()
+        > 1;
     let placed = layout(ui, rect, rem, compact, view);
     // The selected tab's capsule, under the tabs, sliding to the tab picked.
     let capsule_target = view
         .tabs
         .get(view.selected)
         .zip(placed.tabs.get(view.selected).copied().flatten())
-        .filter(|(folder, _)| !folder.hidden)
+        .filter(|(folder, _)| !tab_hidden(ui.ctx(), folder).0)
         .map(|(folder, (at, _))| {
             let tab = id.with(("tab", &folder.list));
             let (label, count_width, _) = tab_parts(ui, tab, folder);
@@ -672,7 +677,9 @@ pub(super) fn layout(ui: &Ui, rect: Rect, rem: f32, compact: bool, view: &super:
     };
     let mut tabs = Vec::with_capacity(view.tabs.len());
     for folder in &view.tabs {
-        let (opacity, collapsed) = hiding(ui, id.with(("tab-hidden", &folder.list)), folder.hidden);
+        let (hidden, animate) = tab_hidden(ui.ctx(), folder);
+        let (opacity, collapsed) =
+            hiding(ui, id.with(("tab-hidden", &folder.list)), hidden, animate);
         let shown = 1.0 - collapsed;
         if shown <= 0.0 {
             tabs.push(None);
@@ -682,7 +689,7 @@ pub(super) fn layout(ui: &Ui, rect: Rect, rem: f32, compact: bool, view: &super:
         // Superhuman pairs with a bullet are spaced like the rest. A hidden tab's `max-width` falls
         // from the whole label's width (`100%`).
         let margin = (1.5 * rem).max(TAB_GAP);
-        let cut = folder.hidden.then_some(((right - left) * shown, opacity));
+        let cut = hidden.then_some(((right - left) * shown, opacity));
         let width = tab_width(ui, id.with(("tab", &folder.list)), folder);
         tabs.push(Some((
             flow.place(cut.map_or(width, |(max, _)| width.min(max)), margin * shown),
@@ -825,16 +832,30 @@ fn filter_width(ui: &Ui, name: &str) -> f32 {
 /// How far a tab that hides while empty has gone as it hides: its opacity (going over 250ms) and
 /// how far it has collapsed (0–1, as its `max-width` and margin go after 50ms, over 250ms), on
 /// `cubic-bezier(0.19, 1, 0.22, 1)`. It comes back at once, because the transition belongs to the
-/// hidden state. A tab hidden from the start doesn't animate.
-fn hiding(ui: &Ui, id: egui::Id, hidden: bool) -> (f32, f32) {
+/// hidden state. A tab hidden from the start, or without `animate`, doesn't animate.
+fn hiding(ui: &Ui, id: egui::Id, hidden: bool, animate: bool) -> (f32, f32) {
     const CURVE: CubicBezier = CubicBezier::new(0.19, 1.0, 0.22, 1.0);
-    let elapsed = 0.3
-        * ui.ctx()
-            .animate_bool_with_time(id, hidden, if hidden { 0.3 } else { 0.0 });
+    let time = if hidden && animate { 0.3 } else { 0.0 };
+    let elapsed = 0.3 * ui.ctx().animate_bool_with_time(id, hidden, time);
     (
         1.0 - CURVE.at((elapsed / 0.25).min(1.0)),
         CURVE.at(((elapsed - 0.05) / 0.25).clamp(0.0, 1.0)),
     )
+}
+
+/// Whether `folder` is hidden as the header shows it, and whether its hiding animates. Its count
+/// is unknown for a moment after the app opens or reloads, where [`crate::splits::tabs`] shows
+/// every split: it keeps the state it was last known in instead, so the empty splits don't flash
+/// in and collapse again, pushing the selected tab across. The first time it's known, it hides at
+/// once.
+fn tab_hidden(ctx: &egui::Context, folder: &crate::splits::Tab) -> (bool, bool) {
+    let key = egui::Id::new(("split-tab-hidden", &folder.list));
+    let known = ctx.data(|data| data.get_temp::<bool>(key));
+    if folder.count.is_none() {
+        return (known.unwrap_or(folder.hidden), true);
+    }
+    ctx.data_mut(|data| data.insert_temp(key, folder.hidden));
+    (folder.hidden, known.is_some())
 }
 
 /// Paints a split tab with its line box at `at`: the name, its count (12px, 5px after the name,
@@ -865,6 +886,7 @@ fn tab(
     let mut painter = ui.painter().clone();
     let (label, _, count) = tab_parts(ui, id, folder);
     let width = tab_width(ui, id, folder);
+    let hidden = tab_hidden(ui.ctx(), folder).0;
     let (digits, incomplete) = count.map_or((None, false), |(digits, incomplete)| {
         (Some(digits), incomplete)
     });
@@ -878,20 +900,20 @@ fn tab(
     let response = ui.interact(
         rect,
         id,
-        if folder.hidden {
+        if hidden {
             Sense::hover()
         } else {
             Sense::click()
         },
     );
-    let hovered = response.hovered() && !folder.hidden;
+    let hovered = response.hovered() && !hidden;
     if hovered {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
     if !selected && !hovered && emoji_only(&folder.name) {
         painter.multiply_opacity(0.6);
     }
-    if tooltip && !folder.hidden {
+    if tooltip && !hidden {
         let (text, keys) = folder.key();
         exo_ui::DescribedTooltip {
             description: folder.description.as_deref(),
@@ -946,7 +968,7 @@ fn tab(
             );
         }
     }
-    (rect, response.clicked() && !folder.hidden)
+    (rect, response.clicked() && !hidden)
 }
 
 /// The capsule's padding around the selected tab's name and count.
