@@ -512,9 +512,10 @@ pub(super) fn show(
         .zip(placed.tabs.get(view.selected).copied().flatten())
         .filter(|(folder, _)| !folder.hidden)
         .map(|(folder, (at, _))| {
-            let (label, count_width, _) = tab_parts(ui, id.with(("tab", &folder.list)), folder);
+            let tab = id.with(("tab", &folder.list));
+            let (label, count_width, _) = tab_parts(ui, tab, folder);
             let width = label + count_width.map_or(0.0, |width| 5.0 + width);
-            Rect::from_min_size(at, vec2(width, 24.0))
+            (tab, Rect::from_min_size(at, vec2(width, 24.0)))
         });
     capsule(ui, id.with("tab-capsule"), capsule_target, zero);
     for (index, (folder, at)) in view.tabs.iter().zip(&placed.tabs).enumerate() {
@@ -957,17 +958,20 @@ const CAPSULE_CURVE: CubicBezier = CubicBezier::new(0.2, 0.9, 0.25, 1.0);
 /// Where the capsule slides from and to, and when it set off.
 #[derive(Clone, Copy)]
 struct CapsuleSlide {
+    /// The tab it's on, or heading for.
+    tab: egui::Id,
     from: Rect,
     to: Rect,
     started: f64,
 }
 
-/// Paints the selected tab's capsule behind `target` (the tab's name and count), sliding there
-/// from where it was. The first time, or once the tabs are gone, it's at once. In the macOS
-/// accent colour, faint, or white over the Inbox Zero photo.
-fn capsule(ui: &Ui, id: egui::Id, target: Option<Rect>, zero: bool) {
+/// Paints the selected tab's capsule behind `target` (the tab `tab`'s name and count), sliding
+/// there when another tab is picked. A tab that only moved (others hiding as a reload finds them
+/// empty, the window resized, a count changed) keeps it on it. The first time, or once the tabs
+/// are gone, it's at once. In the macOS accent colour, faint, or white over the Inbox Zero photo.
+fn capsule(ui: &Ui, id: egui::Id, target: Option<(egui::Id, Rect)>, zero: bool) {
     let ctx = ui.ctx();
-    let Some(target) = target else {
+    let Some((tab, target)) = target else {
         ctx.data_mut(|data| data.remove::<CapsuleSlide>(id));
         return;
     };
@@ -982,19 +986,25 @@ fn capsule(ui: &Ui, id: egui::Id, target: Option<Rect>, zero: bool) {
         )
     };
     let slide = match ctx.data(|data| data.get_temp::<CapsuleSlide>(id)) {
-        Some(slide) if slide.to == target => slide,
-        // A new tab: off from wherever it is now. A tab that only moved (the window resized, a
-        // count changed) snaps there.
-        Some(slide) if (slide.to.center().x - target.center().x).abs() > 1.0
-            || (slide.to.top() - target.top()).abs() > 1.0 =>
-        {
+        Some(slide) if slide.tab == tab && slide.to == target => slide,
+        // The same tab, moved: a slide under way heads for where it is now, else it's there.
+        Some(slide) if slide.tab == tab => {
+            let sliding = now - slide.started < f64::from(CAPSULE_SLIDE);
             CapsuleSlide {
-                from: position(&slide),
+                from: if sliding { slide.from } else { target },
                 to: target,
-                started: now,
+                ..slide
             }
         }
-        _ => CapsuleSlide {
+        // A new tab: off from wherever it is now.
+        Some(slide) => CapsuleSlide {
+            tab,
+            from: position(&slide),
+            to: target,
+            started: now,
+        },
+        None => CapsuleSlide {
+            tab,
             from: target,
             to: target,
             started: now,
